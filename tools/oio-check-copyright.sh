@@ -20,3 +20,15 @@ BASEDIR=$1
 	done
 done
 
+echo "git diff --name-only HEAD...$TRAVIS_BRANCH"
+git diff --name-only HEAD...$TRAVIS_BRANCH
+
+REGEX="Copyright \(C\) (|[0-9]{4}-)$(date +"%Y") OpenIO SAS, as part of OpenIO SDS"
+for FILE in $(git diff --name-only HEAD...$TRAVIS_BRANCH); do
+    HEAD=$(head -n 10 "${FILE}")
+    if ! echo "${HEAD}" | /bin/grep -q "Copyright" ; then continue ; fi
+    if ! [[ "${HEAD}" =~ ${REGEX} ]] ; then
+        echo "Update Copyright section in ${FILE}" 1>&2
+        exit 1
+    fi
+done
