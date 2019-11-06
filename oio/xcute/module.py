@@ -13,26 +13,24 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
-from oio.xcute.common.task import XcuteTask
+from oio.common.logger import get_logger
 
 
-class TesterFirstTask(XcuteTask):
+class XcuteModule(object):
 
-    def process(self, payload):
-        self.logger.info('First task: %s', payload['msg'])
-        return True
+    MODULE_TYPE = None
 
+    def __init__(self, conf, options, logger=None):
+        self.conf = conf
+        self.options = options or dict()
+        self.logger = logger or get_logger(self.conf)
+        self.lock = None
 
-class TesterSecondTask(XcuteTask):
+    def get_tasks_with_args(self):
+        raise NotImplementedError()
 
-    def process(self, payload):
-        self.logger.info('Second task: %s', payload['msg'])
-        return True
+    def send_task(self, item):
+        raise NotImplementedError()
 
-
-def tester_job(job_conf, marker=0, **kwargs):
-    for i in range(marker + 1, 5):
-        if i < 2:
-            yield (TesterFirstTask, {'msg': 'coucou-%d' % i}, None)
-        else:
-            yield (TesterSecondTask, {'msg': 'hibou-%d' % i}, 4)
+    def receive_result(self, result):
+        raise NotImplementedError()

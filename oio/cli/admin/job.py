@@ -17,7 +17,7 @@ import signal
 from datetime import datetime
 
 from oio.cli import Command, Lister, ShowOne
-from oio.xcute.common.manager import XcuteManager
+from oio.xcute.manager import XcuteManager
 
 
 def _flat_dict_from_dict(parsed_args, dict_):

@@ -21,7 +21,7 @@ import signal
 import sys
 
 from oio.cli import make_logger_args_parser, get_logger_from_args
-from oio.xcute.common.manager import XcuteManager
+from oio.xcute.manager import XcuteManager
 from oio.xcute.blob_mover import RawxDecommissionJob
 
 
