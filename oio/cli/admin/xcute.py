@@ -13,11 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import signal
 from datetime import datetime
 
 from oio.cli import Command, Lister, ShowOne
-from oio.xcute.manager import XcuteManager
+from oio.xcute.client import XcuteClient
 
 
 def _flat_dict_from_dict(parsed_args, dict_):
@@ -50,22 +49,23 @@ def _flat_dict_from_dict(parsed_args, dict_):
     return flat_dict
 
 
-class JobCommand(object):
+class XcuteCommand(object):
 
-    _manager = None
+    _client = None
 
     @property
     def logger(self):
         return self.app.client_manager.logger
 
     @property
-    def manager(self):
-        if self._manager is None:
-            self._manager = XcuteManager()
-        return self._manager
+    def client(self):
+        if self._client is None:
+            self._client = XcuteClient(
+                self.app.client_manager.client_conf, logger=self.logger)
+        return self._client
 
 
-class JobList(JobCommand, Lister):
+class XcuteJobList(XcuteCommand, Lister):
     """
     List all jobs
     """
@@ -73,7 +73,7 @@ class JobList(JobCommand, Lister):
     columns = ('ID', 'Status', 'Type', 'Lock', 'ctime', 'mtime')
 
     def _take_action(self, parsed_args):
-        jobs = self.manager.list_jobs()
+        jobs = self.client.job_list()
         for job_info in jobs:
             job_job = job_info['job']
             job_time = job_info['time']
@@ -88,13 +88,36 @@ class JobList(JobCommand, Lister):
         return self.columns, self._take_action(parsed_args)
 
 
-class JobShow(JobCommand, ShowOne):
+class XcuteJobWaiting(XcuteCommand, Lister):
+    """
+    List all waiting jobs
+    """
+
+    columns = ('ID', 'Status', 'Type', 'Lock', 'ctime', 'mtime')
+
+    def _take_action(self, parsed_args):
+        jobs = self.client.job_waiting()
+        for job_info in jobs:
+            job_job = job_info['job']
+            job_time = job_info['time']
+            yield (job_job['id'], job_job['status'], job_job['type'],
+                   job_job.get('lock', ''),
+                   datetime.utcfromtimestamp(float(job_time['ctime'])),
+                   datetime.utcfromtimestamp(float(job_time['mtime'])))
+
+    def take_action(self, parsed_args):
+        self.logger.debug('take_action(%s)', parsed_args)
+
+        return self.columns, self._take_action(parsed_args)
+
+
+class XcuteJobShow(XcuteCommand, ShowOne):
     """
     Get all informations about the job
     """
 
     def get_parser(self, prog_name):
-        parser = super(JobShow, self).get_parser(prog_name)
+        parser = super(XcuteJobShow, self).get_parser(prog_name)
         parser.add_argument(
             'job_id',
             metavar='<job_id>',
@@ -104,7 +127,7 @@ class JobShow(JobCommand, ShowOne):
     def take_action(self, parsed_args):
         self.logger.debug('take_action(%s)', parsed_args)
 
-        job_info = self.manager.show_job(parsed_args.job_id)
+        job_info = self.client.job_show(parsed_args.job_id)
         if parsed_args.formatter == 'table':
             job_time = job_info['time']
             job_time['ctime'] = datetime.utcfromtimestamp(
@@ -115,39 +138,73 @@ class JobShow(JobCommand, ShowOne):
             _flat_dict_from_dict(parsed_args, job_info).items()))
 
 
-class JobPause():
-    pass
-
-
-class JobResume(JobCommand, Command):
+class XcuteJobPause(XcuteCommand, Command):
     """
-    Resume the job
+    Pause the jobs
     """
+
+    columns = ('ID', 'Paused')
 
     def get_parser(self, prog_name):
-        parser = super(JobResume, self).get_parser(prog_name)
+        parser = super(XcuteJobPause, self).get_parser(prog_name)
         parser.add_argument(
-            'job_id',
+            'job_ids',
+            nargs='+',
             metavar='<job_id>',
-            help=("Job ID to resume"))
+            help=("Job IDs to pause"))
         return parser
+
+    def _take_action(self, parsed_args):
+        for job_id in parsed_args.job_ids:
+            paused = True
+            try:
+                self.client.job_resume(job_id)
+            except Exception as exc:
+                self.logger.error('Failed to paused job %s: %s',
+                                  job_id, exc)
+                paused = False
+            yield (job_id, paused)
 
     def take_action(self, parsed_args):
         self.logger.debug('take_action(%s)', parsed_args)
 
-        job = self.manager.resume_job(parsed_args.job_id)
-
-        def exit_gracefully(signum, frame):
-            job.exit_gracefully()
-
-        signal.signal(signal.SIGINT, exit_gracefully)
-        signal.signal(signal.SIGTERM, exit_gracefully)
-
-        job.run()
-        self.success = job.success
+        return self.columns, self._take_action(parsed_args)
 
 
-class JobDelete(JobCommand, Lister):
+class XcuteJobResume(XcuteCommand, Command):
+    """
+    Resume the jobs
+    """
+
+    columns = ('ID', 'Resumed')
+
+    def get_parser(self, prog_name):
+        parser = super(XcuteJobResume, self).get_parser(prog_name)
+        parser.add_argument(
+            'job_ids',
+            nargs='+',
+            metavar='<job_id>',
+            help=("Job IDs to resume"))
+        return parser
+
+    def _take_action(self, parsed_args):
+        for job_id in parsed_args.job_ids:
+            resumed = True
+            try:
+                self.client.job_resume(job_id)
+            except Exception as exc:
+                self.logger.error('Failed to resumed job %s: %s',
+                                  job_id, exc)
+                resumed = False
+            yield (job_id, resumed)
+
+    def take_action(self, parsed_args):
+        self.logger.debug('take_action(%s)', parsed_args)
+
+        return self.columns, self._take_action(parsed_args)
+
+
+class XcuteJobDelete(XcuteCommand, Lister):
     """
     Delete all informations about the jobs
     """
@@ -155,7 +212,7 @@ class JobDelete(JobCommand, Lister):
     columns = ('ID', 'Deleted')
 
     def get_parser(self, prog_name):
-        parser = super(JobDelete, self).get_parser(prog_name)
+        parser = super(XcuteJobDelete, self).get_parser(prog_name)
         parser.add_argument(
             'job_ids',
             nargs='+',
@@ -167,7 +224,7 @@ class JobDelete(JobCommand, Lister):
         for job_id in parsed_args.job_ids:
             deleted = True
             try:
-                self.manager.delete_job(job_id)
+                self.client.job_delete(job_id)
             except Exception as exc:
                 self.logger.error('Failed to deleted job %s: %s',
                                   job_id, exc)
@@ -180,7 +237,7 @@ class JobDelete(JobCommand, Lister):
         return self.columns, self._take_action(parsed_args)
 
 
-class JobLocks(JobCommand, Lister):
+class XcuteJobLocks(XcuteCommand, Lister):
     """
     Get all the locks used.
     """
@@ -188,8 +245,39 @@ class JobLocks(JobCommand, Lister):
     columns = ('Key', 'Owner')
 
     def _take_action(self, parsed_args):
-        for key, owner in self.manager.get_locks().items():
+        for key, owner in self.client.locks().items():
             yield (key, owner)
+
+    def take_action(self, parsed_args):
+        self.logger.debug('take_action(%s)', parsed_args)
+
+        return self.columns, self._take_action(parsed_args)
+
+
+class XcuteOrchestratorJobs(XcuteCommand, Lister):
+    """
+    Get all jobs for the orchestrator.
+    """
+
+    columns = ('ID', 'Status', 'Type', 'Lock', 'ctime', 'mtime')
+
+    def get_parser(self, prog_name):
+        parser = super(XcuteOrchestratorJobs, self).get_parser(prog_name)
+        parser.add_argument(
+            'orchestrator_id',
+            metavar='<orchestrator_id>',
+            help=("Orchestrator ID to list"))
+        return parser
+
+    def _take_action(self, parsed_args):
+        jobs = self.client.orchestrator_jobs(parsed_args.orchestrator_id)
+        for job_info in jobs:
+            job_job = job_info['job']
+            job_time = job_info['time']
+            yield (job_job['id'], job_job['status'], job_job['type'],
+                   job_job.get('lock', ''),
+                   datetime.utcfromtimestamp(float(job_time['ctime'])),
+                   datetime.utcfromtimestamp(float(job_time['mtime'])))
 
     def take_action(self, parsed_args):
         self.logger.debug('take_action(%s)', parsed_args)
