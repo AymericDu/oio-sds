@@ -97,13 +97,17 @@ class XcuteJob(object):
             self.errors_details[key] = int_value(value, 0)
             job_errors[key] = self.errors_details[key]
 
-        job_options = self.job_info.setdefault('options', dict())
-        self.module = module_class(self.conf, job_options)
+        job_options = self.job_info.get('options')
+        job_details = self.job_info.get('details')
+        self.module = module_class(self.conf, job_options, job_details,
+                                   logger=logger)
         self.job_lock = self.module.lock
         job_job['lock'] = self.job_lock
+        self.job_info['options'] = self.module.options
+        self.job_info['details'] = self.module.details
 
     def get_tasks_with_args(self):
-        return self.module.get_tasks_with_args(last_item=self.items_last_sent)
+        return self.module.get_tasks_with_args(self.items_last_sent)
 
     def send_task(self, item):
         self.items_sent += 1

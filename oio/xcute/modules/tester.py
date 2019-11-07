@@ -52,16 +52,17 @@ class TesterModule(XcuteModule):
     MODULE_TYPE = 'tester'
     DEFAULT_ERROR_PERCENTAGE = 0
 
-    def __init__(self, conf, options, logger=None):
-        super(TesterModule, self).__init__(conf, options, logger=logger)
-        self.lock = options.get('lock')
+    def __init__(self, conf, options, details, logger=None):
+        super(TesterModule, self).__init__(
+            conf, options, details, logger=logger)
+        self.lock = self.options.get('lock')
 
         self.error_percentage = int_value(
-            options.get('error_percentage'),
+            self.options.get('error_percentage'),
             self.DEFAULT_ERROR_PERCENTAGE)
-        options['error_percentage'] = self.error_percentage
+        self.options['error_percentage'] = self.error_percentage
 
-    def get_tasks_with_args(self, last_item=None):
+    def get_tasks_with_args(self, last_item):
         start_index = 0
         if last_item is not None:
             start_index = ITEMS.index(last_item) + 1

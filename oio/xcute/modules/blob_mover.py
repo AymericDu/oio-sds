@@ -19,7 +19,7 @@ from oio.common.exceptions import ContentNotFound, OrphanChunk
 from oio.conscience.client import ConscienceClient
 from oio.content.factory import ContentFactory
 from oio.rdir.client import RdirClient
-from oio.xcute.job import XcuteJob
+from oio.xcute.module import XcuteModule
 from oio.xcute.task import XcuteTask
 
 
@@ -49,18 +49,22 @@ class BlobMover(XcuteTask):
             fake_excluded_chunks.append(chunk)
         return fake_excluded_chunks
 
-    def process(self, chunk_url, rawx_timeout=None, min_chunk_size=None,
-                max_chunk_size=None, excluded_rawx=None, **kwargs):
+    def process(self, chunk_id, rawx_id=None, rawx_timeout=None,
+                min_chunk_size=None, max_chunk_size=None, excluded_rawx=None,
+                **kwargs):
+        if not rawx_id:
+            raise ValueError('No rawx ID')
         min_chunk_size = min_chunk_size \
-            or RawxDecommissionJob.DEFAULT_MIN_CHUNK_SIZE
+            or RawxDecommissionModule.DEFAULT_MIN_CHUNK_SIZE
         max_chunk_size = max_chunk_size \
-            or RawxDecommissionJob.DEFAULT_MAX_CHUNK_SIZE
+            or RawxDecommissionModule.DEFAULT_MAX_CHUNK_SIZE
         excluded_rawx = excluded_rawx \
-            or RawxDecommissionJob.DEFAULT_EXCLUDED_RAWX
+            or RawxDecommissionModule.DEFAULT_EXCLUDED_RAWX
 
         fake_excluded_chunks = self._generate_fake_excluded_chunks(
             excluded_rawx)
 
+        chunk_url = '/'.join(('http:/', rawx_id, chunk_id))
         meta = self.blob_client.chunk_head(chunk_url, timeout=rawx_timeout,
                                            **kwargs)
         container_id = meta['container_id']
@@ -87,11 +91,12 @@ class BlobMover(XcuteTask):
             chunk_id, fake_excluded_chunks=fake_excluded_chunks, **kwargs)
 
         self.logger.info('Moved chunk %s to %s', chunk_url, new_chunk['url'])
+        return chunk_size
 
 
-class RawxDecommissionJob(XcuteJob):
+class RawxDecommissionModule(XcuteModule):
 
-    JOB_TYPE = 'rawx-decommission'
+    MODULE_TYPE = 'rawx-decommission'
     DEFAULT_RDIR_FETCH_LIMIT = 1000
     DEFAULT_RDIR_TIMEOUT = 60.0
     DEFAULT_RAWX_TIMEOUT = 60.0
@@ -99,53 +104,57 @@ class RawxDecommissionJob(XcuteJob):
     DEFAULT_MAX_CHUNK_SIZE = 0
     DEFAULT_EXCLUDED_RAWX = list()
 
-    def __init__(self, conf, job_info, create=False, logger=None):
-        super(RawxDecommissionJob, self).__init__(
-            conf, job_info, create=create, logger=logger)
+    def __init__(self, conf, options, details, logger=None):
+        super(RawxDecommissionModule, self).__init__(
+            conf, options, details, logger=logger)
 
-        self.rdir_client = RdirClient(self.conf, logger=self.logger)
-
-    def _parse_job_info(self, create=False):
-        super(RawxDecommissionJob, self)._parse_job_info(create=create)
-
-        job_config = self.job_info.setdefault('config', dict())
-        self.service_id = job_config.get('service_id')
-        if not self.service_id:
-            raise ValueError('Missing service ID')
+        self.rawx_id = options.get('rawx_id')
+        if not self.rawx_id:
+            raise ValueError('Missing rawx ID')
 
         self.rdir_fetch_limit = int_value(
-            job_config.get('rdir_fetch_limit'),
+            self.options.get('rdir_fetch_limit'),
             self.DEFAULT_RDIR_FETCH_LIMIT)
-        job_config['rdir_fetch_limit'] = self.rdir_fetch_limit
+        self.options['rdir_fetch_limit'] = self.rdir_fetch_limit
         self.rdir_timeout = float_value(
-            job_config.get('rdir_timeout'), self.DEFAULT_RDIR_TIMEOUT)
-        job_config['rdir_timeout'] = self.rdir_timeout
+            self.options.get('rdir_timeout'), self.DEFAULT_RDIR_TIMEOUT)
+        self.options['rdir_timeout'] = self.rdir_timeout
         self.rawx_timeout = float_value(
-            job_config.get('rawx_timeout'), self.DEFAULT_RAWX_TIMEOUT)
-        job_config['rawx_timeout'] = self.rawx_timeout
+            self.options.get('rawx_timeout'), self.DEFAULT_RAWX_TIMEOUT)
+        self.options['rawx_timeout'] = self.rawx_timeout
         self.min_chunk_size = int_value(
-            job_config.get('min_chunk_size'), self.DEFAULT_MIN_CHUNK_SIZE)
-        job_config['min_chunk_size'] = self.min_chunk_size
+            self.options.get('min_chunk_size'), self.DEFAULT_MIN_CHUNK_SIZE)
+        self.options['min_chunk_size'] = self.min_chunk_size
         self.max_chunk_size = int_value(
-            job_config.get('max_chunk_size'), self.DEFAULT_MAX_CHUNK_SIZE)
-        job_config['max_chunk_size'] = self.max_chunk_size
-        excluded_rawx = job_config.get('excluded_rawx') or ''
-        job_config['excluded_rawx'] = excluded_rawx
+            self.options.get('max_chunk_size'), self.DEFAULT_MAX_CHUNK_SIZE)
+        self.options['max_chunk_size'] = self.max_chunk_size
+        excluded_rawx = self.options.get('excluded_rawx') or ''
+        self.options['excluded_rawx'] = excluded_rawx
         self.excluded_rawx = [rawx for rawx in excluded_rawx.split(',')
                               if rawx]
 
-        job_job = self.job_info.setdefault('job', dict())
-        job_job['lock'] = 'rawx/%s' % self.service_id
+        self.rdir_client = RdirClient(self.conf, logger=self.logger)
 
-    def _get_tasks_with_args(self):
+        self.lock = 'rawx/%s' % self.rawx_id
+
+        details_chunks = self.details.setdefault('chunks', dict())
+        self.chunks_size = int_value(details_chunks.get('size'), 0)
+
+    def get_tasks_with_args(self, last_chunk_id):
         chunks_info = self.rdir_client.chunk_fetch(
-            self.service_id, limit=self.rdir_fetch_limit,
-            timeout=self.rdir_timeout, start_after=self.items_last_sent)
+            self.rawx_id, limit=self.rdir_fetch_limit,
+            timeout=self.rdir_timeout, start_after=last_chunk_id)
 
-        kwargs = {'rawx_timeout': self.rawx_timeout,
+        kwargs = {'rawx_id': self.rawx_id,
+                  'rawx_timeout': self.rawx_timeout,
                   'min_chunk_size': self.min_chunk_size,
                   'max_chunk_size': self.max_chunk_size,
                   'excluded_rawx': self.excluded_rawx}
         for _, _, chunk_id, _ in chunks_info:
-            yield (BlobMover, '/'.join(('http:/', self.service_id, chunk_id)),
-                   kwargs)
+            yield (BlobMover, chunk_id, kwargs)
+
+    def send_task(self, chunk_id):
+        pass
+
+    def receive_result(self, chunk_size):
+        self.chunks_size += chunk_size

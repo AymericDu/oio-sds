@@ -20,13 +20,14 @@ class XcuteModule(object):
 
     MODULE_TYPE = None
 
-    def __init__(self, conf, options, logger=None):
+    def __init__(self, conf, options, details, logger=None):
         self.conf = conf
         self.options = options or dict()
+        self.details = details or dict()
         self.logger = logger or get_logger(self.conf)
         self.lock = None
 
-    def get_tasks_with_args(self):
+    def get_tasks_with_args(self, last_item):
         raise NotImplementedError()
 
     def send_task(self, item):

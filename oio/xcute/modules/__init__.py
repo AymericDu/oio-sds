@@ -1,6 +1,8 @@
+from oio.xcute.modules.blob_mover import RawxDecommissionModule
 from oio.xcute.modules.tester import TesterModule
 
 MODULE_TYPES = {
+    RawxDecommissionModule.MODULE_TYPE: RawxDecommissionModule,
     TesterModule.MODULE_TYPE: TesterModule
 }
 

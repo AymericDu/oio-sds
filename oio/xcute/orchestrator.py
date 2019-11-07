@@ -204,12 +204,13 @@ class XcuteOrchestrator(object):
                 job_info['job']['id'], job_info['job']['type'], exc)
             self.backend.fail_job(job_info['job']['id'])
 
-    def _beanstalkd_job_data_from_task(self, job, task_class, item, kwargs):
+    def _beanstalkd_job_data_from_task(self, job, task_class, task_item,
+                                       task_kwargs):
         beanstalkd_job = dict()
         beanstalkd_job['job_id'] = job.job_id
         beanstalkd_job['task'] = pickle.dumps(task_class)
-        beanstalkd_job['item'] = item
-        beanstalkd_job['kwargs'] = kwargs or dict()
+        beanstalkd_job['item'] = task_item
+        beanstalkd_job['kwargs'] = task_kwargs or dict()
         beanstalkd_job['beanstalkd_reply'] = {
             'addr': self.beanstalkd_reply.addr,
             'tube': self.beanstalkd_reply.tube}
