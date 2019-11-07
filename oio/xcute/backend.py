@@ -144,11 +144,11 @@ class XcuteBackend(RedisConnection):
         redis.call('HSET', 'xcute:job:info:' .. KEYS[1],
                    'job.status', 'WAITING');
         redis.call('ZADD', 'xcute:job:ids', 0, KEYS[1]);
-        redis.call('RPUSH', 'xcute:waiting:queue', KEYS[1])
+        redis.call('RPUSH', 'xcute:waiting:jobs', KEYS[1])
         """ + _lua_update_job_info
 
     lua_start_new_job = """
-        local job_id = redis.call('LPOP', 'xcute:waiting:queue')
+        local job_id = redis.call('LPOP', 'xcute:waiting:jobs')
         if job_id == nil or job_id == false then
             return nil;
         end;
@@ -313,6 +313,23 @@ class XcuteBackend(RedisConnection):
 
             if len(job_ids) < limit_:
                 break
+        return jobs
+
+    def get_waiting_jobs(self):
+
+        job_ids = self.conn.lrange('xcute:waiting:jobs', 0, -1)
+        pipeline = self.conn.pipeline(True)
+        for job_id in job_ids:
+            pipeline.hgetall('xcute:job:info:%s' % job_id)
+        res = pipeline.execute()
+
+        jobs = list()
+        i = 0
+        for job_id in job_ids:
+            if not res[i]:
+                continue
+            jobs.append(_dict_from_flat_dict(res[i]))
+            i += 1
         return jobs
 
     def list_orchestrator_jobs(self, orchestrator_id, marker=None, limit=1000):

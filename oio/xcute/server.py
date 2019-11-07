@@ -37,12 +37,19 @@ class XcuteServer(WerkzeugApp):
             Submount('/v1.0/xcute', [
                 Rule('/jobs', endpoint='job_list',
                      methods=['POST', 'GET']),
+                Rule('/jobs/waiting', endpoint='job_waiting',
+                     methods=['GET']),
+                Rule('/jobs/locks', endpoint='job_locks',
+                     methods=['GET']),
                 Rule('/jobs/<job_id>', endpoint='job',
                      methods=['GET', 'DELETE']),
                 Rule('/jobs/<job_id>/pause', endpoint='job_pause',
                      methods=['POST']),
                 Rule('/jobs/<job_id>/resume', endpoint='job_resume',
                      methods=['POST']),
+                Rule('/orchestrator/<orchestrator_id>/jobs',
+                     endpoint='orchestrator_jobs',
+                     methods=['GET']),
             ])
         ])
 
@@ -69,6 +76,14 @@ class XcuteServer(WerkzeugApp):
 
             return Response(json.dumps(job.job_info), status=202)
 
+    def on_job_waiting(self, req):
+        waiting = self.backend.get_waiting_jobs()
+        return Response(json.dumps(waiting), mimetype='application/json')
+
+    def on_job_locks(self, req):
+        locks = self.backend.get_locks()
+        return Response(json.dumps(locks), mimetype='application/json')
+
     def on_job(self, req, job_id):
         if req.method == 'GET':
             try:
@@ -92,6 +107,10 @@ class XcuteServer(WerkzeugApp):
         return Response(status=501)
         # do something
         # return Response(status=204)
+
+    def on_orchestrator_jobs(self, req, orchestrator_id):
+        jobs = self.backend.list_orchestrator_jobs(orchestrator_id)
+        return Response(json.dumps(jobs), mimetype='application/json')
 
 
 def create_app(conf):
