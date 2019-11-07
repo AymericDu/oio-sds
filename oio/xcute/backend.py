@@ -105,18 +105,18 @@ class XcuteBackend(RedisConnection):
     _lua_errors = {
         'job_exists': (Forbidden,
                        'The job already exists'),
-        'no_job': (NotFound,
-                   'The job does\'nt exist'),
-        'lock_in_use': (Forbidden,
-                        'The lock is in use'),
-        'must_be_not_waiting': (Forbidden,
-                                'The job must be not waiting'),
-        'must_be_running': (Forbidden,
-                            'The job must be running'),
-        'must_be_paused': (Forbidden,
-                           'The job must be paused'),
-        'must_be_paused_finished': (Forbidden,
-                                    'The job must be paused or finished')
+        'no_job': (
+            NotFound, 'The job does\'nt exist'),
+        'lock_in_use': (
+            Forbidden, 'The lock is in use'),
+        'must_be_not_waiting': (
+            Forbidden, 'The job must be not waiting'),
+        'must_be_running': (
+            Forbidden, 'The job must be running'),
+        'must_be_paused': (
+            Forbidden, 'The job must be paused'),
+        'must_be_waiting_paused_finished': (
+            Forbidden, 'The job must be waiting or paused or finished')
         }
 
     _lua_update_job_info = """
@@ -240,8 +240,12 @@ class XcuteBackend(RedisConnection):
         if status == nil or status == false then
             return redis.error_reply('no_job');
         end;
-        if status ~= 'PAUSED' and status ~= 'FINISHED' then
-            return redis.error_reply('must_be_paused_finished');
+        if status ~= 'WAITING' and status ~= 'PAUSED' and status ~= 'FINISHED' then
+            return redis.error_reply('must_be_waiting_paused_finished');
+        end;
+
+        if status == 'WAITING' then
+            redis.call('LREM', 'xcute:waiting:jobs', 1, KEYS[1]);
         end;
 
         local lock = redis.call('HGET', 'xcute:job:info:' .. KEYS[1],
