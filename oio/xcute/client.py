@@ -31,6 +31,10 @@ class XcuteClient(HttpApi):
         _, data = self._request('GET', '/jobs')
         return data
 
+    def job_create(self, job_info):
+        _, data = self._request('POST', '/jobs', json=job_info)
+        return data
+
     def job_waiting(self):
         _, data = self._request('GET', '/jobs/waiting')
         return data
