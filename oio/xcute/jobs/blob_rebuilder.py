@@ -38,18 +38,22 @@ class RawxRebuildTask(XcuteTask):
 
         self.chunk_operator = ChunkOperator(self.conf, logger=self.logger)
 
-    def process(self, task_id, task_payload, reqid=None):
+    def process(self, job_id, task_id, task_payload, reqid=None):
         container_id = task_payload['container_id']
         content_id = task_payload['content_id']
         chunk_id = task_payload['chunk_id']
 
         if self.dry_run:
-            self.logger.debug('[reqid=%s] [dryrun] Rebuilding %s',
-                              reqid, chunk_id)
+            self.logger.debug(
+                '[job_id=%s, task_id=%s, reqid=%s] '
+                'Rebuilding chunk %s (dryrun)',
+                job_id, task_id, reqid, chunk_id)
             return {'skipped_chunks': 1}
 
         # Start rebuilding the chunk
-        self.logger.debug('[reqid=%s] Rebuilding %s', reqid, chunk_id)
+        self.logger.debug(
+            '[job_id=%s, task_id=%s, reqid=%s] Rebuilding chunk %s',
+            job_id, task_id, reqid, chunk_id)
         try:
             chunk_size = self.chunk_operator.rebuild(
                     container_id, content_id, chunk_id,

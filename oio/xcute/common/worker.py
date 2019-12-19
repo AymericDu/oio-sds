@@ -60,11 +60,14 @@ class XcuteWorker(object):
             reqid = job_id + request_id('-')
             reqid = reqid[:STRLEN_REQID]
             try:
-                task_result = task.process(task_id, task_payload, reqid=reqid)
+                task_result = task.process(
+                    job_id, task_id, task_payload, reqid=reqid)
                 task_results.update(task_result)
             except Exception as exc:
-                self.logger.warn('[job_id=%s] Fail to process task %s: %s',
-                                 job_id, task_id, exc)
+                self.logger.warn(
+                    '[job_id=%s, task_id=%s, reqid=%s] '
+                    'Fail to process task: %s',
+                    job_id, task_id, reqid, exc)
                 task_errors[type(exc).__name__] += 1
 
         return job_id, tasks.keys(), task_results, task_errors, \

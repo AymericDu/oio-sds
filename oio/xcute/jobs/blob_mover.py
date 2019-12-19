@@ -64,7 +64,7 @@ class RawxDecommissionTask(XcuteTask):
             fake_excluded_chunks.append(chunk)
         return fake_excluded_chunks
 
-    def process(self, task_id, task_payload, reqid=None):
+    def process(self, job_id, task_id, task_payload, reqid=None):
         container_id = task_payload['container_id']
         content_id = task_payload['content_id']
         chunk_id = task_payload['chunk_id']
@@ -89,11 +89,15 @@ class RawxDecommissionTask(XcuteTask):
         # Maybe skip the chunk because it doesn't match the size constaint
         if chunk_size < self.min_chunk_size:
             self.logger.debug(
-                '[reqid=%s] SKIP %s too small', reqid, chunk_url)
+                '[job_id=%s, task_id=%s, reqid=%s] '
+                'Skip chunk %s too small (chunk_size=%d)',
+                job_id, task_id, reqid, chunk_id, chunk_size)
             return {'skipped_chunks_too_small': 1}
         if self.max_chunk_size > 0 and chunk_size > self.max_chunk_size:
             self.logger.debug(
-                '[reqid=%s] SKIP %s too big', reqid, chunk_url)
+                '[job_id=%s, task_id=%s, reqid=%s] '
+                'Skip chunk %s too big (chunk_size=%d)',
+                job_id, task_id, reqid, chunk_id, chunk_size)
             return {'skipped_chunks_too_big': 1}
 
         # Start moving the chunk

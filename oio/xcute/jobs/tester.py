@@ -39,10 +39,12 @@ class TesterTask(XcuteTask):
 
         self.error_percentage = job_params['error_percentage']
 
-    def process(self, task_id, task_payload, reqid=None):
+    def process(self, job_id, task_id, task_payload, reqid=None):
         msg = task_payload['msg']
 
-        self.logger.info('[reqid=%s] Hello: %s', reqid, msg)
+        self.logger.info(
+            '[job_id=%s, task_id=%s, reqid=%s] Hello: %s',
+            job_id, task_id, reqid, msg)
 
         if self.error_percentage \
                 and random.randrange(100) < self.error_percentage:
