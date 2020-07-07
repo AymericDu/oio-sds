@@ -221,20 +221,28 @@ class Tool(object):
         raise NotImplementedError()
 
     def _read_retry_queue(self):
-        if self.retry_queue is None:
+        if self.retry_queue is None or self.retryer is None:
             return
         while True:
             # Reschedule jobs we were not able to handle.
             item = self.retry_queue.get()
-            if self.retryer:
-                sent = False
-                while not sent:
-                    sent = self.retryer.send_job(
-                        json.dumps(self.task_event_from_item(item)),
-                        delay=self.retry_delay)
-                    if not sent:
-                        sleep(1.0)
-                self.retryer.job_done()
+            if item is None:  # end signal
+                self.retry_queue.task_done()
+                break
+
+            beanstalkd_job = json.dumps(self.task_event_from_item(item))
+            sent = False
+            while not sent:
+                sent = self.retryer.send_job(
+                    beanstalkd_job, delay=self.retry_delay)
+                if not sent:
+                    if not self.tool.running:
+                        self.logger.warn(
+                            'The tool is stopped and '
+                            'the task cannot be retry: %s', beanstalkd_job)
+                        break
+                    sleep(1.0)
+            self.retryer.job_done()
             self.retry_queue.task_done()
 
     def run(self):
@@ -254,6 +262,7 @@ class Tool(object):
 
         # block until the retry queue is empty
         if self.retry_queue:
+            self.retry_queue.put(None)
             self.retry_queue.join()
 
     def is_success(self):
@@ -310,13 +319,19 @@ class ToolWorker(object):
                     self.logger)
 
             sent = False
-            event_json = json.dumps(res_event)
+            beanstalkd_job = json.dumps(res_event)
             # This will loop forever if there is a connection issue with the
             # beanstalkd server. We chose to let it loop until someone fixes
             # the problem (or the problem resolves by magic).
             while not sent:
-                sent = self.beanstalkd_reply.send_job(event_json)
+                sent = self.beanstalkd_reply.send_job(beanstalkd_job)
                 if not sent:
+                    if not self.tool.running:
+                        self.logger.warn(
+                            'The tool is stopped and '
+                            'the result of the task cannot be returned: %s',
+                            beanstalkd_job)
+                        break
                     sleep(1.0)
             self.beanstalkd_reply.job_done()
         except Exception as exc:  # pylint: disable=broad-except
@@ -332,7 +347,9 @@ class ToolWorker(object):
         while True:
             item_with_beanstalkd_reply = self.queue_workers.get()
             if item_with_beanstalkd_reply is None:  # end signal
+                self.queue_workers.task_done()
                 break
+
             item, beanstalkd_reply = item_with_beanstalkd_reply
             info = None
             error = None
@@ -597,16 +614,24 @@ class _DistributedDispatcher(_Dispatcher):
         """
         task_event['beanstalkd_reply'] = reply_loc
         workers = self.beanstalkd_workers.values()
+        beanstalkd_job = json.dumps(task_event)
         nb_workers = len(workers)
-        while True:
+        while next_worker is not None:
             for _ in range(nb_workers):
-                success = workers[next_worker].send_job(
-                    json.dumps(task_event))
+                success = workers[next_worker].send_job(beanstalkd_job)
                 next_worker = (next_worker + 1) % nb_workers
                 if success:
                     return next_worker
+            else:
+                if not self.tool.running:
+                    break
             self.logger.warn("All beanstalkd workers are full")
             sleep(5)
+
+        self.logger.warn(
+            'The tool is stopped and the task cannot be sent: %s',
+            beanstalkd_job)
+        return None
 
     def _distribute_events(self, reply_loc=None):
         next_worker = 0
@@ -624,9 +649,6 @@ class _DistributedDispatcher(_Dispatcher):
                                            self.max_items_per_second)
                 next_worker = self._send_task_event(task_event, reply_loc,
                                                     next_worker)
-
-                if not self.tool.running:
-                    break
         except Exception as exc:
             if not isinstance(exc, StopIteration) and self.tool.running:
                 self.logger.error("Failed to distribute events: %s", exc)
